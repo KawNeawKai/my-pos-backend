@@ -21,52 +21,43 @@ app.get('/api/menu', async (req, res) => {
     res.json(data);
 });
 
+// ค้นหา app.post('/api/orders', ... ในไฟล์ index.js แล้วแก้เป็นแบบนี้:
 app.post('/api/orders', async (req, res) => {
-    const { table_id, menu_item_id, quantity } = req.body;
+    // 1. รับค่า notes เพิ่มมาจาก req.body
+    const { table_id, menu_item_id, quantity, notes } = req.body; 
+
     try {
-        let { data: existingOrder } = await supabase
-            .from('orders')
-            .select('id')
-            .eq('table_id', table_id)
-            .eq('status', 'unpaid')
-            .maybeSingle(); 
+        // ... (โค้ดส่วนเช็ค existingOrder เดิม ไม่ต้องแก้) ...
 
-        let currentOrderId;
-
-        if (existingOrder) {
-            currentOrderId = existingOrder.id;
-        } else {
-            const { data: newOrder, error: createError } = await supabase
-                .from('orders')
-                .insert([{ table_id: table_id, status: 'unpaid' }])
-                .select()
-                .single();
-            if (createError) throw createError;
-            currentOrderId = newOrder.id;
-        }
-
-        // 🌟 แก้ไขตรงนี้: เพิ่ม status: 'pending' ให้หน้าครัวมองเห็น!
+        // 2. ตอน Insert ลงตาราง order_items ให้เพิ่ม notes: notes ลงไปด้วย
         const { error: itemError } = await supabase
             .from('order_items')
-            .insert([{ order_id: currentOrderId, menu_item_id: menu_item_id, quantity: quantity, status: 'pending' }]);
+            .insert([{ 
+                order_id: currentOrderId, 
+                menu_item_id: menu_item_id, 
+                quantity: quantity, 
+                status: 'pending',
+                notes: notes // ✨ บันทึกหมายเหตุลงฐานข้อมูล
+            }]);
+        
         if (itemError) throw itemError;
 
         io.emit('update_kitchen');
         io.emit('update_cashier');
-        
         res.json({ success: true });
     } catch (error) {
-        console.error("Order Error: ", error);
         res.status(500).json({ error: error.message });
     }
 });
 
+// ค้นหา app.get('/api/kitchen/orders', ... แล้วแก้ตรง .select():
 app.get('/api/kitchen/orders', async (req, res) => {
     const { data, error } = await supabase
         .from('order_items')
-        .select('id, quantity, status, orders!inner(tables(table_number)), menu_items(name)')
+        .select('id, quantity, status, notes, orders!inner(tables(table_number)), menu_items(name)') // ✨ เพิ่ม notes เข้าไปในคำสั่ง select
         .eq('status', 'pending')
         .order('created_at', { ascending: true });
+    
     res.json(data || []);
 });
 
