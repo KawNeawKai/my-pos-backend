@@ -88,5 +88,45 @@ app.post('/api/cashier/checkout', async (req, res) => {
     res.json({ success: true });
 });
 
+// ==========================================
+// 🌟 API: ระบบสะสมแต้มสมาชิก (ลูกค้าใหม่เริ่ม 0)
+// ==========================================
+app.post('/api/cashier/points', async (req, res) => {
+    const { phone_number, points_earned } = req.body;
+    
+    try {
+        // 1. ลองค้นหาเบอร์นี้ในตาราง customers ก่อน
+        let { data: customer } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('phone_number', phone_number)
+            .maybeSingle();
+
+        let newTotal = points_earned;
+
+        if (customer) {
+            // 2. ถ้ามีประวัติอยู่แล้ว เอาแต้มเก่า (ถ้ามี) มาบวกแต้มใหม่
+            newTotal = (customer.points || 5) + points_earned;
+            
+            await supabase
+                .from('customers')
+                .update({ points: newTotal })
+                .eq('phone_number', phone_number);
+        } else {
+            // 3. ถ้าเป็นลูกค้าใหม่ (หาไม่เจอ) ให้สร้างข้อมูลใหม่เลย
+            await supabase
+                .from('customers')
+                .insert([{ phone_number: phone_number, points: newTotal }]);
+        }
+
+        // ส่งแต้มสะสมสุทธิกลับไปให้หน้าแคชเชียร์ทำใบเสร็จ
+        res.json({ success: true, total_points: newTotal });
+        
+    } catch (error) {
+        console.error("Points Error: ", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
