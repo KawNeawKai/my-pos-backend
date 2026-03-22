@@ -19,7 +19,6 @@ app.get('/api/menu', async (req, res) => {
 });
 
 app.post('/api/orders', async (req, res) => {
-    // 🌟 รับค่า status เพิ่มเข้ามา เพื่อทำระบบแอบส่งบิล
     const { table_id, menu_item_id, quantity, notes, status } = req.body;
     try {
         let { data: existingOrder } = await supabase
@@ -41,7 +40,7 @@ app.post('/api/orders', async (req, res) => {
                 order_id: currentOrderId,
                 menu_item_id: menu_item_id,
                 quantity: quantity,
-                status: status || 'pending', // 🌟 ถ้าหน้าเว็บส่ง served มา จะไม่เด้งเข้าครัว!
+                status: status || 'pending',
                 notes: notes || ""
             }]);
 
@@ -51,18 +50,18 @@ app.post('/api/orders', async (req, res) => {
         io.emit('update_cashier');
         res.json({ success: true });
     } catch (error) {
+        console.error("Order Error: ", error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 🌟 อัปเดต API ดึงข้อมูลห้องครัว ให้ส่งเวลา (created_at) มาด้วย
 app.get('/api/kitchen/orders', async (req, res) => {
     const { data, error } = await supabase
         .from('order_items')
-        // เพิ่ม created_at เข้าไปในวงเล็บ .select() ตรงนี้ครับ 👇
-        .select('id, quantity, status, notes, created_at, orders!inner(tables(table_number)), menu_items(name)')
+        // 🌟 เปลี่ยนตรงนี้ครับ! ให้ตรงกับฐานข้อมูลเป๊ะๆ (ordered_at)
+        .select('id, quantity, status, notes, ordered_at, orders!inner(tables(table_number)), menu_items(name)')
         .eq('status', 'pending')
-        .order('id', { ascending: true }); // เรียงตามคิวสั่งก่อน-หลัง
+        .order('id', { ascending: true });
         
     if(error) console.error("Kitchen fetch error:", error);
     res.json(data || []);
@@ -75,10 +74,11 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
 });
 
 app.get('/api/cashier/orders', async (req, res) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
         .from('orders')
         .select('id, status, tables(table_number), order_items(quantity, menu_items(name, price))')
-        .eq('status', 'unpaid').order('id', { ascending: true });
+        .eq('status', 'unpaid')
+        .order('id', { ascending: true });
     res.json(data || []);
 });
 
