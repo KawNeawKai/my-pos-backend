@@ -55,11 +55,16 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
+// 🌟 อัปเดต API ดึงข้อมูลห้องครัว ให้ส่งเวลา (created_at) มาด้วย
 app.get('/api/kitchen/orders', async (req, res) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
         .from('order_items')
-        .select('id, quantity, status, notes, orders!inner(tables(table_number)), menu_items(name)')
-        .eq('status', 'pending').order('id', { ascending: true });
+        // เพิ่ม created_at เข้าไปในวงเล็บ .select() ตรงนี้ครับ 👇
+        .select('id, quantity, status, notes, created_at, orders!inner(tables(table_number)), menu_items(name)')
+        .eq('status', 'pending')
+        .order('id', { ascending: true }); // เรียงตามคิวสั่งก่อน-หลัง
+        
+    if(error) console.error("Kitchen fetch error:", error);
     res.json(data || []);
 });
 
