@@ -128,5 +128,23 @@ app.post('/api/cashier/points', async (req, res) => {
     }
 });
 
+// ==========================================
+// 📊 API: สำหรับหน้า Dashboard (ดึงข้อมูลบิลที่จ่ายเงินแล้ว)
+// ==========================================
+app.get('/api/dashboard/stats', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('orders')
+            .select('id, created_at, order_items(quantity, menu_items(name, price))')
+            .eq('status', 'paid'); // ดึงเฉพาะบิลที่จ่ายแล้วเท่านั้น
+            
+        if (error) throw error;
+        res.json(data || []);
+    } catch (error) {
+        console.error("Dashboard Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
