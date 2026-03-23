@@ -58,25 +58,28 @@ app.put('/api/admin/menu/stock/:id', async (req, res) => {
 });
 
 // 📑 จัดเรียงเมนู (อัปเกรดจับ Error แบบเด็ดขาด)
+// 📑 จัดเรียงเมนู (อัปเกรดแบบรายงานผลการบันทึก)
 app.put('/api/admin/menu/reorder', async (req, res) => {
     const { items } = req.body;
     try {
+        let successCount = 0; // ตัวนับว่าเซฟสำเร็จกี่อัน
         for (let item of items) {
-            const { error } = await supabase.from('menu_items')
+            const { data, error } = await supabase.from('menu_items')
                 .update({ 
                     category_order: item.category_order, 
                     item_order: item.item_order,
-                    category: item.category
+                    category: item.category 
                 })
-                .eq('id', item.id);
+                .eq('id', item.id)
+                .select(); // 🌟 บังคับให้ฐานข้อมูลตอบกลับมาว่าเซฟติดไหม
                 
-            // 🌟 จุดสำคัญ: ถ้าเซฟไม่เข้า ให้มันโยน Error ทันที!
-            if (error) throw error; 
+            if (error) throw error;
+            if (data && data.length > 0) successCount++; // ถ้ารายการไหนเซฟติด ให้นับ +1
         }
         io.emit('update_menu');
-        res.json({ success: true });
+        // ส่งยอดสำเร็จกลับไปแจ้งเตือนหน้าเว็บ
+        res.json({ success: true, updated: successCount, total: items.length });
     } catch (error) {
-        console.error("Reorder Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
