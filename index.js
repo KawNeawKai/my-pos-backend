@@ -209,8 +209,8 @@ app.get('/api/settings', async (req, res) => {
 });
 
 app.put('/api/settings', async (req, res) => {
-    // 🌟 อัปเกรด: เพิ่มตัวแปรมารับค่า เปิด-ปิดร้าน, แต้ม, และโลโก้
-    const { store_name, promptpay_number, total_tables, receipt_footer, is_store_open, points_rate, store_logo_url } = req.body;
+    // เพิ่ม closed_message เข้ามารับค่า
+    const { store_name, promptpay_number, total_tables, receipt_footer, is_store_open, points_rate, store_logo_url, closed_message } = req.body;
     try {
         const { error } = await supabase.from('settings').update({ 
             store_name, 
@@ -219,7 +219,8 @@ app.put('/api/settings', async (req, res) => {
             receipt_footer,
             is_store_open,
             points_rate,
-            store_logo_url
+            store_logo_url,
+            closed_message
         }).eq('id', 1);
         if (error) throw error;
         
