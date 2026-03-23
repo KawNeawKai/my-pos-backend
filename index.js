@@ -157,10 +157,11 @@ app.get('/api/dashboard/stats', async (req, res) => {
 
 // 1. เพิ่มเมนูใหม่
 app.post('/api/admin/menu', async (req, res) => {
-    const { name, price, category, image_url } = req.body;
+    // 🌟 รับค่า target_categories เพิ่มเข้ามา
+    const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase
         .from('menu_items')
-        .insert([{ name, price, category, image_url }]);
+        .insert([{ name, price, category, image_url, target_categories }]);
     res.json({ success: !error, error: error?.message });
 });
 
@@ -198,13 +199,13 @@ app.get('/api/admin/history', async (req, res) => {
 
 // 5. แก้ไขข้อมูลเมนู (อัปเดต ชื่อ, ราคา, หมวดหมู่, รูปภาพ)
 app.put('/api/admin/menu/:id', async (req, res) => {
-    const { name, price, category, image_url } = req.body;
+    // 🌟 รับค่า target_categories เพิ่มเข้ามา
+    const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase
         .from('menu_items')
-        .update({ name, price, category, image_url })
+        .update({ name, price, category, image_url, target_categories })
         .eq('id', req.params.id);
         
-    // สั่งให้หน้าลูกค้าและหน้าครัวรีเฟรชข้อมูลใหม่
     io.emit('update_menu'); 
     res.json({ success: !error, error: error?.message });
 });
