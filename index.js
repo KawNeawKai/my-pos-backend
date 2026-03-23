@@ -188,6 +188,20 @@ app.get('/api/admin/history', async (req, res) => {
         .eq('status', 'paid') // ดึงเฉพาะบิลที่จ่ายเงินแล้ว
         .order('created_at', { ascending: false }); // เรียงจากใหม่ไปเก่า
     res.json(data || []);
+    
+});
+
+// 5. แก้ไขข้อมูลเมนู (อัปเดต ชื่อ, ราคา, หมวดหมู่, รูปภาพ)
+app.put('/api/admin/menu/:id', async (req, res) => {
+    const { name, price, category, image_url } = req.body;
+    const { error } = await supabase
+        .from('menu_items')
+        .update({ name, price, category, image_url })
+        .eq('id', req.params.id);
+        
+    // สั่งให้หน้าลูกค้าและหน้าครัวรีเฟรชข้อมูลใหม่
+    io.emit('update_menu'); 
+    res.json({ success: !error, error: error?.message });
 });
 
 const PORT = process.env.PORT || 3000;
