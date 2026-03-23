@@ -57,21 +57,23 @@ app.put('/api/admin/menu/stock/:id', async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// 📑 จัดเรียงเมนู
+// 📑 จัดเรียงเมนู (อัปเกรดให้เสถียรขึ้น 100% ป้องกันเซิร์ฟค้าง)
 app.put('/api/admin/menu/reorder', async (req, res) => {
     const { items } = req.body;
     try {
-        const updates = items.map(item => 
-            supabase.from('menu_items').update({ category_order: item.category_order, item_order: item.item_order }).eq('id', item.id)
-        );
-        await Promise.all(updates);
-        io.emit('update_menu');
+        // ใช้ for loop ทยอยอัปเดตทีละรายการ ป้องกันฐานข้อมูลเตะออก (Too many connections)
+        for (let item of items) {
+            await supabase.from('menu_items')
+                .update({ category_order: item.category_order, item_order: item.item_order })
+                .eq('id', item.id);
+        }
+        io.emit('update_menu'); // สั่งหน้าลูกค้าให้รีเฟรช
         res.json({ success: true });
     } catch (error) {
+        console.error("Reorder Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 // 🛒 สั่งอาหาร
 app.post('/api/orders', async (req, res) => {
     const { table_id, menu_item_id, quantity, notes, status } = req.body;
