@@ -209,19 +209,20 @@ app.get('/api/settings', async (req, res) => {
 });
 
 app.put('/api/settings', async (req, res) => {
-    // เพิ่ม closed_message เข้ามารับค่า
-    const { store_name, promptpay_number, total_tables, receipt_footer, is_store_open, points_rate, store_logo_url, closed_message } = req.body;
+    // 🌟 เพิ่มตัวแปรมารับค่าที่อยู่, เบอร์ร้าน, และรหัส PIN
+    const { 
+        store_name, promptpay_number, total_tables, receipt_footer, 
+        is_store_open, points_rate, store_logo_url, closed_message,
+        store_address, store_phone, admin_pin 
+    } = req.body;
+
     try {
         const { error } = await supabase.from('settings').update({ 
-            store_name, 
-            promptpay_number, 
-            total_tables, 
-            receipt_footer,
-            is_store_open,
-            points_rate,
-            store_logo_url,
-            closed_message
+            store_name, promptpay_number, total_tables, receipt_footer,
+            is_store_open, points_rate, store_logo_url, closed_message,
+            store_address, store_phone, admin_pin
         }).eq('id', 1);
+
         if (error) throw error;
         
         io.emit('update_settings'); 
