@@ -14,7 +14,12 @@ const io = new Server(server, { cors: { origin: "*" } });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 app.get('/api/menu', async (req, res) => {
-    const { data } = await supabase.from('menu_items').select('*').order('id');
+    // 🌟 ดึงข้อมูลและเรียงลำดับตามที่เราจัดไว้
+    const { data } = await supabase.from('menu_items')
+        .select('*')
+        .order('category_order', { ascending: true })
+        .order('item_order', { ascending: true })
+        .order('id', { ascending: true }); // สำรองไว้เผื่อเพิ่มใหม่
     res.json(data);
 });
 
@@ -202,6 +207,24 @@ app.put('/api/admin/menu/:id', async (req, res) => {
     // สั่งให้หน้าลูกค้าและหน้าครัวรีเฟรชข้อมูลใหม่
     io.emit('update_menu'); 
     res.json({ success: !error, error: error?.message });
+});
+
+// 6. บันทึกการเรียงลำดับเมนูและหมวดหมู่ (Drag & Drop)
+app.put('/api/admin/menu/reorder', async (req, res) => {
+    const { items } = req.body;
+    try {
+        // อัปเดตข้อมูลตำแหน่งของเมนูทีละตัว
+        const updates = items.map(item => 
+            supabase.from('menu_items')
+            .update({ category_order: item.category_order, item_order: item.item_order })
+            .eq('id', item.id)
+        );
+        await Promise.all(updates);
+        io.emit('update_menu'); // สั่งหน้าลูกค้าให้รีเฟรชอัปเดตตาม
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
