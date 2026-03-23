@@ -161,5 +161,24 @@ app.get('/api/dashboard/stats', async (req, res) => {
     res.json(data || []);
 });
 
+// 📱 ลูกค้า: เช็คสถานะโต๊ะ (เปิดโต๊ะอยู่ไหม? และสั่งอะไรไปแล้วบ้าง?)
+app.get('/api/table/:id/status', async (req, res) => {
+    try {
+        const { data: order } = await supabase.from('orders')
+            .select('id, status, order_items(quantity, status, menu_items(name, price))')
+            .eq('table_id', req.params.id)
+            .eq('status', 'unpaid')
+            .maybeSingle(); // หาบิลที่ยังไม่จ่ายของโต๊ะนี้
+        
+        if (order) {
+            res.json({ isOpen: true, order: order });
+        } else {
+            res.json({ isOpen: false }); // โต๊ะว่าง (เพิ่งจ่ายเงินไป หรือยังไม่มีคนนั่ง)
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
