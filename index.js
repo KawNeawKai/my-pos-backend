@@ -120,12 +120,19 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
 
 // 💰 แคชเชียร์ & ครัว (ดึงข้อมูลออเดอร์)
 app.get('/api/cashier/orders', async (req, res) => {
-    // 🌟 แก้ไข: ดึง id (เพื่อกดเสิร์ฟ), created_at (เพื่อจับเวลา), และ notes (หมายเหตุ)
-    const { data } = await supabase.from('orders')
-        .select('id, status, created_at, tables(table_number), order_items(id, quantity, status, created_at, notes, menu_items(name, price))')
-        .eq('status', 'unpaid')
-        .order('id', { ascending: true });
-    res.json(data || []);
+    try {
+        // 🌟 แก้ไข: ดึง ordered_at (ตามชื่อคอลัมน์จริงใน Supabase ของคุณ)
+        const { data, error } = await supabase.from('orders')
+            .select('id, status, created_at, tables(table_number), order_items(id, quantity, status, ordered_at, notes, menu_items(name, price))')
+            .eq('status', 'unpaid')
+            .order('id', { ascending: true });
+            
+        if (error) throw error;
+        res.json(data || []);
+    } catch (error) {
+        console.error("Error fetching orders:", error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // 💰 ตัดบิล (แคชเชียร์)
