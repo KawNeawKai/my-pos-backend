@@ -127,10 +127,27 @@ app.get('/api/cashier/orders', async (req, res) => {
     res.json(data || []);
 });
 
+// 💰 ตัดบิล (แคชเชียร์)
 app.post('/api/cashier/checkout', async (req, res) => {
-    await supabase.from('orders').update({ status: 'paid' }).eq('id', req.body.order_id);
-    io.emit('update_cashier');
-    res.json({ success: true });
+    try {
+        // 1. แอบดูข้อมูลบิลก่อนว่าคือ "โต๊ะเบอร์อะไร"
+        const { data: order } = await supabase.from('orders').select('table_id').eq('id', req.body.order_id).single();
+        
+        // 2. อัปเดตสถานะเป็น "จ่ายเงินแล้ว (paid)"
+        await supabase.from('orders').update({ status: 'paid' }).eq('id', req.body.order_id);
+        
+        // 3. สั่งแคชเชียร์ให้รีเฟรชหน้าต่าง
+        io.emit('update_cashier');
+        
+        // 🌟 4. ตะโกนบอกหน้าลูกค้าว่า "โต๊ะนี้จ่ายเงินแล้ว รีเฟรชเดี๋ยวนี้!"
+        if (order) {
+            io.emit('clear_table', order.table_id); 
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // ⭐ แต้มสะสม
