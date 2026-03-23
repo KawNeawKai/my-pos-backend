@@ -146,5 +146,49 @@ app.get('/api/dashboard/stats', async (req, res) => {
     }
 });
 
+// ==========================================
+// 🛠️ API: ระบบจัดการหลังบ้าน (Admin Panel)
+// ==========================================
+
+// 1. เพิ่มเมนูใหม่
+app.post('/api/admin/menu', async (req, res) => {
+    const { name, price, category, image_url } = req.body;
+    const { error } = await supabase
+        .from('menu_items')
+        .insert([{ name, price, category, image_url }]);
+    res.json({ success: !error, error: error?.message });
+});
+
+// 2. ลบเมนูทิ้ง
+app.delete('/api/admin/menu/:id', async (req, res) => {
+    const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', req.params.id);
+    res.json({ success: !error, error: error?.message });
+});
+
+// 3. ปรับสถานะ "ของหมด" (Out of stock)
+app.put('/api/admin/menu/stock/:id', async (req, res) => {
+    const { is_out_of_stock } = req.body;
+    const { error } = await supabase
+        .from('menu_items')
+        .update({ is_out_of_stock })
+        .eq('id', req.params.id);
+    // แจ้งเตือนหน้าลูกค้าให้รีเฟรชเมนูอัตโนมัติ (ถ้าต้องการ)
+    io.emit('update_menu'); 
+    res.json({ success: !error, error: error?.message });
+});
+
+// 4. ดูประวัติบิลทั้งหมดแบบย้อนหลัง
+app.get('/api/admin/history', async (req, res) => {
+    const { data, error } = await supabase
+        .from('orders')
+        .select('id, created_at, status, tables(table_number), order_items(quantity, menu_items(name, price))')
+        .eq('status', 'paid') // ดึงเฉพาะบิลที่จ่ายเงินแล้ว
+        .order('created_at', { ascending: false }); // เรียงจากใหม่ไปเก่า
+    res.json(data || []);
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
