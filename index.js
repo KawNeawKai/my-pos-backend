@@ -197,5 +197,31 @@ app.get('/api/table/:id/status', async (req, res) => {
     }
 });
 
+// ⚙️ ระบบตั้งค่าร้านค้า (Store Settings)
+app.get('/api/settings', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('settings').select('*').eq('id', 1).single();
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/settings', async (req, res) => {
+    const { store_name, promptpay_number, total_tables, receipt_footer } = req.body;
+    try {
+        const { error } = await supabase.from('settings').update({ 
+            store_name, promptpay_number, total_tables, receipt_footer 
+        }).eq('id', 1);
+        if (error) throw error;
+        
+        io.emit('update_settings'); // ตะโกนบอกทุกหน้าจอ (แคชเชียร์/ลูกค้า) ให้รีเฟรชการตั้งค่า
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
