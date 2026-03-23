@@ -7,13 +7,13 @@ const { Server } = require('socket.io');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // ขยายให้รองรับรูปภาพ
+app.use(express.json({ limit: '10mb' })); 
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// 🍔 ดึงเมนูทั้งหมด (ต้องบังคับให้ฐานข้อมูลเรียงตามคิวที่เราจัดเป๊ะๆ)
+// 🍔 ดึงเมนูทั้งหมด
 app.get('/api/menu', async (req, res) => {
     const { data } = await supabase.from('menu_items')
         .select('*')
@@ -32,7 +32,41 @@ app.post('/api/admin/menu', async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// ✏️ แก้ไขเมนู (จุดที่มักจะบัคกันบ่อยๆ ผมแก้ให้แล้ว!)
+// 🌟 ย้ายมาไว้ตรงนี้! API จัดเรียงเมนู (ต้องอยู่เหนือคำว่า /:id เด็ดขาด)
+app.put('/api/admin/menu/reorder', async (req, res) => {
+    const { items } = req.body;
+    try {
+        let successCount = 0; 
+        for (let item of items) {
+            const { data, error } = await supabase.from('menu_items')
+                .update({ 
+                    category_order: item.category_order, 
+                    item_order: item.item_order,
+                    category: item.category 
+                })
+                .eq('id', item.id)
+                .select(); 
+                
+            if (error) throw error;
+            if (data && data.length > 0) successCount++;
+        }
+        io.emit('update_menu');
+        res.json({ success: true, updated: successCount, total: items.length });
+    } catch (error) {
+        console.error("Reorder Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 🚫 ปรับสถานะของหมด
+app.put('/api/admin/menu/stock/:id', async (req, res) => {
+    const { is_out_of_stock } = req.body;
+    const { error } = await supabase.from('menu_items').update({ is_out_of_stock }).eq('id', req.params.id);
+    io.emit('update_menu');
+    res.json({ success: !error, error: error?.message });
+});
+
+// ✏️ API แก้ไขเมนู (ถูกดันลงมาอยู่ข้างล่างแล้ว จะได้ไม่แย่งซีนกัน)
 app.put('/api/admin/menu/:id', async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase.from('menu_items')
@@ -47,41 +81,6 @@ app.delete('/api/admin/menu/:id', async (req, res) => {
     const { error } = await supabase.from('menu_items').delete().eq('id', req.params.id);
     io.emit('update_menu');
     res.json({ success: !error, error: error?.message });
-});
-
-// 🚫 ปรับสถานะของหมด
-app.put('/api/admin/menu/stock/:id', async (req, res) => {
-    const { is_out_of_stock } = req.body;
-    const { error } = await supabase.from('menu_items').update({ is_out_of_stock }).eq('id', req.params.id);
-    io.emit('update_menu');
-    res.json({ success: !error, error: error?.message });
-});
-
-// 📑 จัดเรียงเมนู (อัปเกรดจับ Error แบบเด็ดขาด)
-// 📑 จัดเรียงเมนู (อัปเกรดแบบรายงานผลการบันทึก)
-app.put('/api/admin/menu/reorder', async (req, res) => {
-    const { items } = req.body;
-    try {
-        let successCount = 0; // ตัวนับว่าเซฟสำเร็จกี่อัน
-        for (let item of items) {
-            const { data, error } = await supabase.from('menu_items')
-                .update({ 
-                    category_order: item.category_order, 
-                    item_order: item.item_order,
-                    category: item.category 
-                })
-                .eq('id', item.id)
-                .select(); // 🌟 บังคับให้ฐานข้อมูลตอบกลับมาว่าเซฟติดไหม
-                
-            if (error) throw error;
-            if (data && data.length > 0) successCount++; // ถ้ารายการไหนเซฟติด ให้นับ +1
-        }
-        io.emit('update_menu');
-        // ส่งยอดสำเร็จกลับไปแจ้งเตือนหน้าเว็บ
-        res.json({ success: true, updated: successCount, total: items.length });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
 });
 
 // 🛒 สั่งอาหาร
