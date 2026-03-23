@@ -118,11 +118,11 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
     res.json({ success: true });
 });
 
-// 💰 แคชเชียร์
+// 💰 แคชเชียร์ & ครัว (ดึงข้อมูลออเดอร์)
 app.get('/api/cashier/orders', async (req, res) => {
-    // 🌟 อัปเกรด: ดึง status และ ordered_at ของอาหารแต่ละจานมาด้วย
+    // 🌟 แก้ไข: ดึง id (เพื่อกดเสิร์ฟ), created_at (เพื่อจับเวลา), และ notes (หมายเหตุ)
     const { data } = await supabase.from('orders')
-        .select('id, status, tables(table_number), order_items(quantity, status, ordered_at, menu_items(name, price))')
+        .select('id, status, created_at, tables(table_number), order_items(id, quantity, status, created_at, notes, menu_items(name, price))')
         .eq('status', 'unpaid')
         .order('id', { ascending: true });
     res.json(data || []);
@@ -229,6 +229,28 @@ app.put('/api/settings', async (req, res) => {
         if (error) throw error;
         
         io.emit('update_settings'); 
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 🍳 API สำหรับหน้าจอครัว: อัปเดตสถานะอาหารว่า "ทำเสร็จ/เสิร์ฟแล้ว"
+app.put('/api/orders/serve', async (req, res) => {
+    const { item_id } = req.body;
+    try {
+        // อัปเดตสถานะในฐานข้อมูลเป็น served
+        const { error } = await supabase
+            .from('order_items')
+            .update({ status: 'served' })
+            .eq('id', item_id);
+            
+        if (error) throw error;
+        
+        // 🌟 เพิ่ม Socket.io ตะโกนบอกหน้าจออื่นๆ ทันทีที่ทำเสร็จ!
+        io.emit('update_kitchen'); // ให้หน้าจอครัวเครื่องอื่นๆ รีเฟรช (เผื่อมีครัวหลายจอ)
+        io.emit('update_cashier'); // ให้แคชเชียร์เห็นว่าอาหารเสิร์ฟแล้ว (เปลี่ยนเป็นสีเขียว)
+        
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
