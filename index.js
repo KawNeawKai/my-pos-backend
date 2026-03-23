@@ -119,9 +119,14 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
 
 // 💰 แคชเชียร์
 app.get('/api/cashier/orders', async (req, res) => {
-    const { data } = await supabase.from('orders').select('id, status, tables(table_number), order_items(quantity, menu_items(name, price))').eq('status', 'unpaid').order('id', { ascending: true });
+    // 🌟 อัปเกรด: ดึง status และ ordered_at ของอาหารแต่ละจานมาด้วย
+    const { data } = await supabase.from('orders')
+        .select('id, status, tables(table_number), order_items(quantity, status, ordered_at, menu_items(name, price))')
+        .eq('status', 'unpaid')
+        .order('id', { ascending: true });
     res.json(data || []);
 });
+
 app.post('/api/cashier/checkout', async (req, res) => {
     await supabase.from('orders').update({ status: 'paid' }).eq('id', req.body.order_id);
     io.emit('update_cashier');
