@@ -209,14 +209,21 @@ app.get('/api/settings', async (req, res) => {
 });
 
 app.put('/api/settings', async (req, res) => {
-    const { store_name, promptpay_number, total_tables, receipt_footer } = req.body;
+    // 🌟 อัปเกรด: เพิ่มตัวแปรมารับค่า เปิด-ปิดร้าน, แต้ม, และโลโก้
+    const { store_name, promptpay_number, total_tables, receipt_footer, is_store_open, points_rate, store_logo_url } = req.body;
     try {
         const { error } = await supabase.from('settings').update({ 
-            store_name, promptpay_number, total_tables, receipt_footer 
+            store_name, 
+            promptpay_number, 
+            total_tables, 
+            receipt_footer,
+            is_store_open,
+            points_rate,
+            store_logo_url
         }).eq('id', 1);
         if (error) throw error;
         
-        io.emit('update_settings'); // ตะโกนบอกทุกหน้าจอ (แคชเชียร์/ลูกค้า) ให้รีเฟรชการตั้งค่า
+        io.emit('update_settings'); 
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
