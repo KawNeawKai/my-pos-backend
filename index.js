@@ -13,7 +13,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// 🍔 ดึงเมนูทั้งหมด
+// 🍔 ดึงเมนูทั้งหมด (ต้องบังคับให้ฐานข้อมูลเรียงตามคิวที่เราจัดเป๊ะๆ)
 app.get('/api/menu', async (req, res) => {
     const { data } = await supabase.from('menu_items')
         .select('*')
@@ -57,20 +57,22 @@ app.put('/api/admin/menu/stock/:id', async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// 📑 จัดเรียงเมนู (อัปเกรดให้เสถียรขึ้น 100% ป้องกันเซิร์ฟค้าง)
+// 📑 จัดเรียงเมนู (เพิ่มการเซฟ "ชื่อหมวดหมู่" เวลาย้ายข้ามกล่อง)
 app.put('/api/admin/menu/reorder', async (req, res) => {
     const { items } = req.body;
     try {
-        // ใช้ for loop ทยอยอัปเดตทีละรายการ ป้องกันฐานข้อมูลเตะออก (Too many connections)
         for (let item of items) {
             await supabase.from('menu_items')
-                .update({ category_order: item.category_order, item_order: item.item_order })
+                .update({ 
+                    category_order: item.category_order, 
+                    item_order: item.item_order,
+                    category: item.category // 🌟 สำคัญมาก: อัปเดตชื่อหมวดหมู่ด้วย!
+                })
                 .eq('id', item.id);
         }
-        io.emit('update_menu'); // สั่งหน้าลูกค้าให้รีเฟรช
+        io.emit('update_menu');
         res.json({ success: true });
     } catch (error) {
-        console.error("Reorder Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
