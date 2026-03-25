@@ -134,17 +134,39 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
     res.json({ success: true });
 });
 
-// 💰 แคชเชียร์ & ครัว (ดึงข้อมูลออเดอร์)
+// ==========================================
+// 💰 แคชเชียร์ & ครัว (อัปเกรด: Backend เป็นคนคำนวณยอดรวมให้)
+// ==========================================
 app.get('/api/cashier/orders', async (req, res) => {
     try {
-        // 🌟 แก้ไข: ดึง ordered_at (ตามชื่อคอลัมน์จริงใน Supabase ของคุณ)
         const { data, error } = await supabase.from('orders')
             .select('id, status, created_at, tables(table_number), order_items(id, quantity, status, ordered_at, notes, menu_items(name, price))')
             .eq('status', 'unpaid')
             .order('id', { ascending: true });
             
         if (error) throw error;
-        res.json(data || []);
+        
+        // 🌟 ย้าย Logic มาหลังบ้าน: ให้ Node.js คำนวณยอดรวม และเช็คสถานะว่าเสิร์ฟครบทุุกจานหรือยัง
+        const ordersWithCalculations = (data || []).map(order => {
+            let total_amount = 0;
+            let is_all_served = true;
+            
+            if (order.order_items) {
+                order.order_items.forEach(item => {
+                    total_amount += (item.menu_items?.price || 0) * item.quantity;
+                    if (item.status !== 'served') is_all_served = false;
+                });
+            }
+            
+            // ส่งก้อนข้อมูลที่คำนวณเสร็จแล้วไปให้หน้าเว็บ
+            return {
+                ...order,
+                calculated_total: total_amount,
+                is_all_served: is_all_served
+            };
+        });
+
+        res.json(ordersWithCalculations);
     } catch (error) {
         console.error("Error fetching orders:", error);
         res.status(500).json({ error: error.message });
@@ -197,9 +219,59 @@ app.get('/api/admin/history', async (req, res) => {
     const { data } = await supabase.from('orders').select('id, created_at, status, tables(table_number), order_items(quantity, menu_items(name, price))').eq('status', 'paid').order('created_at', { ascending: false });
     res.json(data || []);
 });
+// ==========================================
+// 📊 Dashboard (อัปเกรด: Backend ทำหน้าที่สรุปยอดและจัดอันดับให้เสร็จสรรพ)
+// ==========================================
 app.get('/api/dashboard/stats', async (req, res) => {
-    const { data } = await supabase.from('orders').select('id, created_at, order_items(quantity, menu_items(name, price))').eq('status', 'paid');
-    res.json(data || []);
+    try {
+        const { data, error } = await supabase.from('orders')
+            .select('id, created_at, order_items(quantity, menu_items(name, price))')
+            .eq('status', 'paid');
+            
+        if (error) throw error;
+        const orders = data || [];
+
+        let totalRevenue = 0;
+        let totalOrders = orders.length;
+        let totalItemsSold = 0;
+        let itemStats = {};
+
+        // 🌟 ให้หลังบ้านทำงานหนักแทน: วนลูปและสรุปยอด
+        orders.forEach(order => {
+            order.order_items.forEach(item => {
+                const itemName = item.menu_items?.name.split('(')[0].trim() || 'ไม่ทราบชื่อ';
+                const qty = item.quantity;
+                const price = item.menu_items?.price || 0;
+                const itemRevenue = price * qty;
+
+                totalRevenue += itemRevenue;
+                totalItemsSold += qty;
+
+                if (!itemStats[itemName]) itemStats[itemName] = { qty: 0, revenue: 0 };
+                itemStats[itemName].qty += qty;
+                itemStats[itemName].revenue += itemRevenue;
+            });
+        });
+
+        // แปลงเป็น Array เพื่อจัดเรียงอันดับ
+        const itemsArray = Object.keys(itemStats).map(name => ({
+            name: name, qty: itemStats[name].qty, revenue: itemStats[name].revenue
+        }));
+
+        // จัดอันดับ Top 5 ให้เสร็จจากเซิร์ฟเวอร์
+        const top5ByQty = [...itemsArray].sort((a, b) => b.qty - a.qty).slice(0, 5);
+        const topByRevenue = [...itemsArray].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+
+        // ส่งออกไปเฉพาะผลลัพธ์ที่ย่อยเสร็จแล้ว!
+        res.json({
+            success: true,
+            summary: { total_revenue: totalRevenue, total_orders: totalOrders, total_items_sold: totalItemsSold },
+            top_items_by_qty: top5ByQty,
+            top_items_by_revenue: topByRevenue
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // 📱 ลูกค้า: เช็คสถานะโต๊ะ (เปิดโต๊ะอยู่ไหม? และสั่งอะไรไปแล้วบ้าง?)
