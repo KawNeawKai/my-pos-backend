@@ -85,24 +85,40 @@ app.delete('/api/admin/menu/:id', async (req, res) => {
 });
 
 // 🛒 สั่งอาหาร
+// 🛒 สั่งอาหาร (อัปเกรด: สร้างโต๊ะให้อัตโนมัติถ้ายังไม่มีในฐานข้อมูล)
 app.post('/api/orders', async (req, res) => {
     const { table_id, menu_item_id, quantity, notes, status } = req.body;
     try {
+        // 🌟 1. ดักจับและสร้างโต๊ะใหม่ให้ฐานข้อมูลรู้จักอัตโนมัติ!
+        let { data: checkTable } = await supabase.from('tables').select('id').eq('id', table_id).maybeSingle();
+        if (!checkTable) {
+            // ถ้าโต๊ะเบอร์นี้ยังไม่มีในฐานข้อมูล ให้ Insert สร้างใหม่ทันที
+            await supabase.from('tables').insert([{ id: table_id, table_number: String(table_id) }]);
+        }
+
+        // 2. หาว่าโต๊ะนี้มีบิลค้างอยู่ไหม (มีลูกค้าเปิดโต๊ะหรือยัง)
         let { data: existingOrder } = await supabase.from('orders').select('id').eq('table_id', table_id).eq('status', 'unpaid').maybeSingle();
         let currentOrderId = existingOrder ? existingOrder.id : null;
+        
         if (!currentOrderId) {
             const { data: newOrder, error: createError } = await supabase.from('orders').insert([{ table_id, status: 'unpaid' }]).select().single();
             if (createError) throw createError;
             currentOrderId = newOrder.id;
         }
+        
+        // 3. ใส่รายการอาหารลงไปในบิล
         const { error: itemError } = await supabase.from('order_items').insert([{
             order_id: currentOrderId, menu_item_id, quantity, status: status || 'pending', notes: notes || ""
         }]);
         if (itemError) throw itemError;
+        
+        // 4. ตะโกนบอกห้องครัวและแคชเชียร์ให้รีเฟรชหน้าจอ
         io.emit('update_kitchen');
         io.emit('update_cashier');
         res.json({ success: true });
+        
     } catch (error) {
+        console.error("Order Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
