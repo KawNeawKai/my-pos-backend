@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,43 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// ==========================================
+// 🛡️ ยามเฝ้าประตู (JWT Middleware)
+// ==========================================
+const JWT_SECRET = process.env.JWT_SECRET || 'my-super-secret-pos-key-2024';
+
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; 
+    if (!token) return res.status(401).json({ success: false, error: 'Access Denied: ไม่พบบัตรยืนยันตัวตน' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ success: false, error: 'บัตรหมดอายุ หรือไม่ถูกต้อง กรุณาล็อกอินใหม่' });
+        req.user = user;
+        next(); // ผ่านได้!
+    });
+};
+
+// 🔑 API ล็อกอินขอ Token
+app.post('/api/admin/login', async (req, res) => {
+    const { pin } = req.body;
+    try {
+        const { data, error } = await supabase.from('settings').select('admin_pin').eq('id', 1).single();
+        if (error) throw error;
+
+        const correctPin = data.admin_pin || "123456";
+        if (pin === correctPin) {
+            // สร้าง Token ให้อายุ 12 ชั่วโมง
+            const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
+            res.json({ success: true, token });
+        } else {
+            res.status(401).json({ success: false, error: 'รหัส PIN ไม่ถูกต้อง' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // 🍔 ดึงเมนูทั้งหมด
 app.get('/api/menu', async (req, res) => {
@@ -25,7 +63,7 @@ app.get('/api/menu', async (req, res) => {
 });
 
 // ➕ เพิ่มเมนู
-app.post('/api/admin/menu', async (req, res) => {
+app.post('/api/admin/menu', verifyToken, async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase.from('menu_items')
         .insert([{ name, price, category, image_url, target_categories }]);
@@ -34,7 +72,7 @@ app.post('/api/admin/menu', async (req, res) => {
 });
 
 // 🌟 ย้ายมาไว้ตรงนี้! API จัดเรียงเมนู (ต้องอยู่เหนือคำว่า /:id เด็ดขาด)
-app.put('/api/admin/menu/reorder', async (req, res) => {
+app.put('/api/admin/menu/reorder', verifyToken, async (req, res) => {
     const { items } = req.body;
     try {
         let successCount = 0; 
@@ -60,7 +98,7 @@ app.put('/api/admin/menu/reorder', async (req, res) => {
 });
 
 // 🚫 ปรับสถานะของหมด
-app.put('/api/admin/menu/stock/:id', async (req, res) => {
+app.put('/api/admin/menu/stock/:id', verifyToken, async (req, res) => {
     const { is_out_of_stock } = req.body;
     const { error } = await supabase.from('menu_items').update({ is_out_of_stock }).eq('id', req.params.id);
     io.emit('update_menu');
@@ -68,7 +106,7 @@ app.put('/api/admin/menu/stock/:id', async (req, res) => {
 });
 
 // ✏️ API แก้ไขเมนู (ถูกดันลงมาอยู่ข้างล่างแล้ว จะได้ไม่แย่งซีนกัน)
-app.put('/api/admin/menu/:id', async (req, res) => {
+app.put('/api/admin/menu/:id', verifyToken, async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase.from('menu_items')
         .update({ name, price, category, image_url, target_categories })
@@ -78,7 +116,7 @@ app.put('/api/admin/menu/:id', async (req, res) => {
 });
 
 // 🗑️ ลบเมนู
-app.delete('/api/admin/menu/:id', async (req, res) => {
+app.delete('/api/admin/menu/:id', verifyToken, async (req, res) => {
     const { error } = await supabase.from('menu_items').delete().eq('id', req.params.id);
     io.emit('update_menu');
     res.json({ success: !error, error: error?.message });
@@ -215,7 +253,7 @@ app.post('/api/cashier/points', async (req, res) => {
 });
 
 // 📊 ประวัติบิล & Dashboard
-app.get('/api/admin/history', async (req, res) => {
+app.get('/api/admin/history', verifyToken, async (req, res) => {
     const { data } = await supabase.from('orders').select('id, created_at, status, tables(table_number), order_items(quantity, menu_items(name, price))').eq('status', 'paid').order('created_at', { ascending: false });
     res.json(data || []);
 });
@@ -304,7 +342,7 @@ app.get('/api/settings', async (req, res) => {
     }
 });
 
-app.put('/api/settings', async (req, res) => {
+app.put('/api/settings', verifyToken, async (req, res) => {
     // 🌟 เพิ่ม sla_warning_time, sla_alert_time, alert_sound
     const { 
         store_name, promptpay_number, total_tables, receipt_footer, 
