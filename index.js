@@ -52,7 +52,7 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
-// 🍔 ดึงเมนูทั้งหมด
+// 🍔 ดึงเมนูทั้งหมด (ไม่ต้องป้องกัน เพราะลูกค้าต้องดูเมนู)
 app.get('/api/menu', async (req, res) => {
     const { data } = await supabase.from('menu_items')
         .select('*')
@@ -62,7 +62,7 @@ app.get('/api/menu', async (req, res) => {
     res.json(data || []);
 });
 
-// ➕ เพิ่มเมนู
+// ➕ เพิ่มเมนู (🛡️ ป้องกันแล้ว)
 app.post('/api/admin/menu', verifyToken, async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase.from('menu_items')
@@ -71,7 +71,7 @@ app.post('/api/admin/menu', verifyToken, async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// 🌟 ย้ายมาไว้ตรงนี้! API จัดเรียงเมนู (ต้องอยู่เหนือคำว่า /:id เด็ดขาด)
+// 🌟 API จัดเรียงเมนู (🛡️ ป้องกันแล้ว)
 app.put('/api/admin/menu/reorder', verifyToken, async (req, res) => {
     const { items } = req.body;
     try {
@@ -97,7 +97,7 @@ app.put('/api/admin/menu/reorder', verifyToken, async (req, res) => {
     }
 });
 
-// 🚫 ปรับสถานะของหมด
+// 🚫 ปรับสถานะของหมด (🛡️ ป้องกันแล้ว)
 app.put('/api/admin/menu/stock/:id', verifyToken, async (req, res) => {
     const { is_out_of_stock } = req.body;
     const { error } = await supabase.from('menu_items').update({ is_out_of_stock }).eq('id', req.params.id);
@@ -105,7 +105,7 @@ app.put('/api/admin/menu/stock/:id', verifyToken, async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// ✏️ API แก้ไขเมนู (ถูกดันลงมาอยู่ข้างล่างแล้ว จะได้ไม่แย่งซีนกัน)
+// ✏️ API แก้ไขเมนู (🛡️ ป้องกันแล้ว)
 app.put('/api/admin/menu/:id', verifyToken, async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
     const { error } = await supabase.from('menu_items')
@@ -115,7 +115,7 @@ app.put('/api/admin/menu/:id', verifyToken, async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// 🗑️ ลบเมนู
+// 🗑️ ลบเมนู (🛡️ ป้องกันแล้ว)
 app.delete('/api/admin/menu/:id', verifyToken, async (req, res) => {
     const { error } = await supabase.from('menu_items').delete().eq('id', req.params.id);
     io.emit('update_menu');
@@ -123,18 +123,14 @@ app.delete('/api/admin/menu/:id', verifyToken, async (req, res) => {
 });
 
 // 🛒 สั่งอาหาร
-// 🛒 สั่งอาหาร (อัปเกรด: สร้างโต๊ะให้อัตโนมัติถ้ายังไม่มีในฐานข้อมูล)
 app.post('/api/orders', async (req, res) => {
     const { table_id, menu_item_id, quantity, notes, status } = req.body;
     try {
-        // 🌟 1. ดักจับและสร้างโต๊ะใหม่ให้ฐานข้อมูลรู้จักอัตโนมัติ!
         let { data: checkTable } = await supabase.from('tables').select('id').eq('id', table_id).maybeSingle();
         if (!checkTable) {
-            // ถ้าโต๊ะเบอร์นี้ยังไม่มีในฐานข้อมูล ให้ Insert สร้างใหม่ทันที
             await supabase.from('tables').insert([{ id: table_id, table_number: String(table_id) }]);
         }
 
-        // 2. หาว่าโต๊ะนี้มีบิลค้างอยู่ไหม (มีลูกค้าเปิดโต๊ะหรือยัง)
         let { data: existingOrder } = await supabase.from('orders').select('id').eq('table_id', table_id).eq('status', 'unpaid').maybeSingle();
         let currentOrderId = existingOrder ? existingOrder.id : null;
         
@@ -144,13 +140,11 @@ app.post('/api/orders', async (req, res) => {
             currentOrderId = newOrder.id;
         }
         
-        // 3. ใส่รายการอาหารลงไปในบิล
         const { error: itemError } = await supabase.from('order_items').insert([{
             order_id: currentOrderId, menu_item_id, quantity, status: status || 'pending', notes: notes || ""
         }]);
         if (itemError) throw itemError;
         
-        // 4. ตะโกนบอกห้องครัวและแคชเชียร์ให้รีเฟรชหน้าจอ
         io.emit('update_kitchen');
         io.emit('update_cashier');
         res.json({ success: true });
@@ -172,9 +166,7 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
     res.json({ success: true });
 });
 
-// ==========================================
-// 💰 แคชเชียร์ & ครัว (อัปเกรด: Backend เป็นคนคำนวณยอดรวมให้)
-// ==========================================
+// 💰 แคชเชียร์ (คำนวณยอดเงิน)
 app.get('/api/cashier/orders', async (req, res) => {
     try {
         const { data, error } = await supabase.from('orders')
@@ -184,7 +176,6 @@ app.get('/api/cashier/orders', async (req, res) => {
             
         if (error) throw error;
         
-        // 🌟 ย้าย Logic มาหลังบ้าน: ให้ Node.js คำนวณยอดรวม และเช็คสถานะว่าเสิร์ฟครบทุุกจานหรือยัง
         const ordersWithCalculations = (data || []).map(order => {
             let total_amount = 0;
             let is_all_served = true;
@@ -196,12 +187,7 @@ app.get('/api/cashier/orders', async (req, res) => {
                 });
             }
             
-            // ส่งก้อนข้อมูลที่คำนวณเสร็จแล้วไปให้หน้าเว็บ
-            return {
-                ...order,
-                calculated_total: total_amount,
-                is_all_served: is_all_served
-            };
+            return { ...order, calculated_total: total_amount, is_all_served: is_all_served };
         });
 
         res.json(ordersWithCalculations);
@@ -214,20 +200,10 @@ app.get('/api/cashier/orders', async (req, res) => {
 // 💰 ตัดบิล (แคชเชียร์)
 app.post('/api/cashier/checkout', async (req, res) => {
     try {
-        // 1. แอบดูข้อมูลบิลก่อนว่าคือ "โต๊ะเบอร์อะไร"
         const { data: order } = await supabase.from('orders').select('table_id').eq('id', req.body.order_id).single();
-        
-        // 2. อัปเดตสถานะเป็น "จ่ายเงินแล้ว (paid)"
         await supabase.from('orders').update({ status: 'paid' }).eq('id', req.body.order_id);
-        
-        // 3. สั่งแคชเชียร์ให้รีเฟรชหน้าต่าง
         io.emit('update_cashier');
-        
-        // 🌟 4. ตะโกนบอกหน้าลูกค้าว่า "โต๊ะนี้จ่ายเงินแล้ว รีเฟรชเดี๋ยวนี้!"
-        if (order) {
-            io.emit('clear_table', order.table_id); 
-        }
-
+        if (order) io.emit('clear_table', order.table_id); 
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -252,14 +228,13 @@ app.post('/api/cashier/points', async (req, res) => {
     }
 });
 
-// 📊 ประวัติบิล & Dashboard
+// 📊 ประวัติบิล & Dashboard (🛡️ ป้องกันแล้ว)
 app.get('/api/admin/history', verifyToken, async (req, res) => {
     const { data } = await supabase.from('orders').select('id, created_at, status, tables(table_number), order_items(quantity, menu_items(name, price))').eq('status', 'paid').order('created_at', { ascending: false });
     res.json(data || []);
 });
-// ==========================================
-// 📊 Dashboard (อัปเกรด: Backend ทำหน้าที่สรุปยอดและจัดอันดับให้เสร็จสรรพ)
-// ==========================================
+
+// 📊 Dashboard สรุปยอด
 app.get('/api/dashboard/stats', async (req, res) => {
     try {
         const { data, error } = await supabase.from('orders')
@@ -269,12 +244,8 @@ app.get('/api/dashboard/stats', async (req, res) => {
         if (error) throw error;
         const orders = data || [];
 
-        let totalRevenue = 0;
-        let totalOrders = orders.length;
-        let totalItemsSold = 0;
-        let itemStats = {};
+        let totalRevenue = 0; let totalOrders = orders.length; let totalItemsSold = 0; let itemStats = {};
 
-        // 🌟 ให้หลังบ้านทำงานหนักแทน: วนลูปและสรุปยอด
         orders.forEach(order => {
             order.order_items.forEach(item => {
                 const itemName = item.menu_items?.name.split('(')[0].trim() || 'ไม่ทราบชื่อ';
@@ -282,56 +253,39 @@ app.get('/api/dashboard/stats', async (req, res) => {
                 const price = item.menu_items?.price || 0;
                 const itemRevenue = price * qty;
 
-                totalRevenue += itemRevenue;
-                totalItemsSold += qty;
-
+                totalRevenue += itemRevenue; totalItemsSold += qty;
                 if (!itemStats[itemName]) itemStats[itemName] = { qty: 0, revenue: 0 };
-                itemStats[itemName].qty += qty;
-                itemStats[itemName].revenue += itemRevenue;
+                itemStats[itemName].qty += qty; itemStats[itemName].revenue += itemRevenue;
             });
         });
 
-        // แปลงเป็น Array เพื่อจัดเรียงอันดับ
-        const itemsArray = Object.keys(itemStats).map(name => ({
-            name: name, qty: itemStats[name].qty, revenue: itemStats[name].revenue
-        }));
-
-        // จัดอันดับ Top 5 ให้เสร็จจากเซิร์ฟเวอร์
+        const itemsArray = Object.keys(itemStats).map(name => ({ name: name, qty: itemStats[name].qty, revenue: itemStats[name].revenue }));
         const top5ByQty = [...itemsArray].sort((a, b) => b.qty - a.qty).slice(0, 5);
         const topByRevenue = [...itemsArray].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
-        // ส่งออกไปเฉพาะผลลัพธ์ที่ย่อยเสร็จแล้ว!
-        res.json({
-            success: true,
-            summary: { total_revenue: totalRevenue, total_orders: totalOrders, total_items_sold: totalItemsSold },
-            top_items_by_qty: top5ByQty,
-            top_items_by_revenue: topByRevenue
-        });
+        res.json({ success: true, summary: { total_revenue: totalRevenue, total_orders: totalOrders, total_items_sold: totalItemsSold }, top_items_by_qty: top5ByQty, top_items_by_revenue: topByRevenue });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// 📱 ลูกค้า: เช็คสถานะโต๊ะ (เปิดโต๊ะอยู่ไหม? และสั่งอะไรไปแล้วบ้าง?)
+// 📱 ลูกค้า: เช็คสถานะโต๊ะ
 app.get('/api/table/:id/status', async (req, res) => {
     try {
         const { data: order } = await supabase.from('orders')
             .select('id, status, order_items(quantity, status, menu_items(name, price))')
             .eq('table_id', req.params.id)
             .eq('status', 'unpaid')
-            .maybeSingle(); // หาบิลที่ยังไม่จ่ายของโต๊ะนี้
+            .maybeSingle(); 
         
-        if (order) {
-            res.json({ isOpen: true, order: order });
-        } else {
-            res.json({ isOpen: false }); // โต๊ะว่าง (เพิ่งจ่ายเงินไป หรือยังไม่มีคนนั่ง)
-        }
+        if (order) res.json({ isOpen: true, order: order });
+        else res.json({ isOpen: false }); 
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// ⚙️ ระบบตั้งค่าร้านค้า (Store Settings)
+// ⚙️ ระบบตั้งค่าร้านค้า GET (ไม่ต้องป้องกัน ลูกค้าต้องดึงไปใช้)
 app.get('/api/settings', async (req, res) => {
     try {
         const { data, error } = await supabase.from('settings').select('*').eq('id', 1).single();
@@ -342,8 +296,8 @@ app.get('/api/settings', async (req, res) => {
     }
 });
 
+// ⚙️ อัปเดตการตั้งค่าร้านค้า (🛡️ ป้องกันแล้ว!)
 app.put('/api/settings', verifyToken, async (req, res) => {
-    // 🌟 เพิ่ม sla_warning_time, sla_alert_time, alert_sound
     const { 
         store_name, promptpay_number, total_tables, receipt_footer, 
         is_store_open, points_rate, store_logo_url, closed_message,
@@ -372,84 +326,59 @@ app.put('/api/settings', verifyToken, async (req, res) => {
 app.put('/api/orders/serve', async (req, res) => {
     const { item_id } = req.body;
     try {
-        // อัปเดตสถานะในฐานข้อมูลเป็น served
-        const { error } = await supabase
-            .from('order_items')
-            .update({ status: 'served' })
-            .eq('id', item_id);
-            
+        const { error } = await supabase.from('order_items').update({ status: 'served' }).eq('id', item_id);
         if (error) throw error;
         
-        // 🌟 เพิ่ม Socket.io ตะโกนบอกหน้าจออื่นๆ ทันทีที่ทำเสร็จ!
-        io.emit('update_kitchen'); // ให้หน้าจอครัวเครื่องอื่นๆ รีเฟรช (เผื่อมีครัวหลายจอ)
-        io.emit('update_cashier'); // ให้แคชเชียร์เห็นว่าอาหารเสิร์ฟแล้ว (เปลี่ยนเป็นสีเขียว)
-        
+        io.emit('update_kitchen'); 
+        io.emit('update_cashier'); 
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// ==========================================
-// 🔀 ระบบจัดการโต๊ะขั้นสูง (Move & Merge)
-// ==========================================
-
-// 1. ย้ายโต๊ะ (Move Table)
+// 🔀 ระบบจัดการโต๊ะขั้นสูง (Move)
 app.put('/api/orders/move', async (req, res) => {
-    const { current_order_id, new_table_id } = req.body;
+    const { current_order_id, new_table_id, old_table_id } = req.body;
     try {
-        // เช็คก่อนว่าโต๊ะใหม่มีลูกค้าอยู่แล้วหรือไม่
         const { data: existing } = await supabase.from('orders').select('id').eq('table_id', new_table_id).eq('status', 'unpaid').maybeSingle();
-        if (existing) {
-            return res.status(400).json({ success: false, error: 'โต๊ะปลายทางไม่ว่าง (มีลูกค้าอยู่แล้ว)' });
-        }
+        if (existing) return res.status(400).json({ success: false, error: 'โต๊ะปลายทางไม่ว่าง (มีลูกค้าอยู่แล้ว)' });
 
-        // ถ้าโต๊ะใหม่ยังไม่มีในระบบ ให้สร้างตารางโต๊ะรอไว้เลย
         let { data: checkTable } = await supabase.from('tables').select('id').eq('id', new_table_id).maybeSingle();
-        if (!checkTable) {
-            await supabase.from('tables').insert([{ id: new_table_id, table_number: String(new_table_id) }]);
-        }
+        if (!checkTable) await supabase.from('tables').insert([{ id: new_table_id, table_number: String(new_table_id) }]);
 
-        // ย้ายบิลไปโต๊ะใหม่
         const { error } = await supabase.from('orders').update({ table_id: new_table_id }).eq('id', current_order_id);
         if (error) throw error;
 
         io.emit('update_cashier');
-        io.emit('update_kitchen'); // ให้ครัวรู้ว่าย้ายโต๊ะแล้ว
-        
-        // สั่งเคลียร์หน้าจอลูกค้าโต๊ะเก่า
-        io.emit('clear_table', req.body.old_table_id);
+        io.emit('update_kitchen'); 
+        io.emit('clear_table', old_table_id);
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+    } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// 2. รวมโต๊ะ/รวมบิล (Merge Table)
+// 🔗 ระบบจัดการโต๊ะขั้นสูง (Merge)
 app.put('/api/orders/merge', async (req, res) => {
-    const { source_order_id, target_table_id } = req.body;
+    const { source_order_id, target_table_id, old_table_id } = req.body;
     try {
-        // หาบิลของโต๊ะเป้าหมายที่จะเอาของไปรวม
         let { data: targetOrder } = await supabase.from('orders').select('id').eq('table_id', target_table_id).eq('status', 'unpaid').maybeSingle();
-        
-        if (!targetOrder) {
-            return res.status(400).json({ success: false, error: 'โต๊ะเป้าหมายไม่มีบิลเปิดอยู่ (ต้องเป็นโต๊ะที่มีลูกค้า)' });
+        if (!targetOrder) return res.status(400).json({ success: false, error: 'โต๊ะเป้าหมายไม่มีลูกค้าอยู่' });
+
+        const { data: itemsToMove } = await supabase.from('order_items').select('id, notes').eq('order_id', source_order_id);
+        if (itemsToMove) {
+            for (let item of itemsToMove) {
+                let newNote = item.notes ? item.notes + ` (รวมมาจากโต๊ะ ${old_table_id})` : `(รวมมาจากโต๊ะ ${old_table_id})`;
+                await supabase.from('order_items').update({ order_id: targetOrder.id, notes: newNote }).eq('id', item.id);
+            }
         }
 
-        // ย้ายรายการอาหารทั้งหมดจากโต๊ะเก่า ไปใส่โต๊ะใหม่
-        const { error: moveError } = await supabase.from('order_items').update({ order_id: targetOrder.id }).eq('order_id', source_order_id);
-        if (moveError) throw moveError;
-
-        // ลบบิลโต๊ะเก่าทิ้ง
         await supabase.from('orders').delete().eq('id', source_order_id);
 
         io.emit('update_cashier');
         io.emit('update_kitchen');
-        io.emit('clear_table', req.body.old_table_id);
+        io.emit('clear_table', old_table_id);
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+    } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
 const PORT = process.env.PORT || 3000;
