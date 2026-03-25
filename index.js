@@ -122,7 +122,7 @@ app.delete('/api/admin/menu/:id', verifyToken, async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
-// 🛒 สั่งอาหาร
+// 🛒 สั่งอาหาร (เพิ่มระบบตัดสต๊อกอัตโนมัติ!)
 app.post('/api/orders', async (req, res) => {
     const { table_id, menu_item_id, quantity, notes, status } = req.body;
     try {
@@ -144,6 +144,21 @@ app.post('/api/orders', async (req, res) => {
             order_id: currentOrderId, menu_item_id, quantity, status: status || 'pending', notes: notes || ""
         }]);
         if (itemError) throw itemError;
+
+        // 🌟 [NEW] ระบบตัดสต๊อกวัตถุดิบ (Inventory Deduction) 🌟
+        const { data: recipes } = await supabase.from('recipes').select('*').eq('menu_item_id', menu_item_id);
+        
+        if (recipes && recipes.length > 0) {
+            for (let recipe of recipes) {
+                // 💡 เปลี่ยนมาใช้ current_stock ตามตารางของคุณ
+                const { data: invItem } = await supabase.from('inventory_items').select('current_stock').eq('id', recipe.inventory_item_id).single();
+                
+                if (invItem) {
+                    const newStock = invItem.current_stock - (recipe.quantity_used * quantity);
+                    await supabase.from('inventory_items').update({ current_stock: newStock }).eq('id', recipe.inventory_item_id);
+                }
+            }
+        }
         
         io.emit('update_kitchen');
         io.emit('update_cashier');
@@ -379,6 +394,57 @@ app.put('/api/orders/merge', async (req, res) => {
         io.emit('clear_table', old_table_id);
         res.json({ success: true });
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+});
+
+// ==========================================
+// 📦 ระบบคลังวัตถุดิบ (Inventory & Recipe)
+// ==========================================
+
+// --- ดึงข้อมูลวัตถุดิบ ---
+app.get('/api/admin/inventory', verifyToken, async (req, res) => {
+    const { data, error } = await supabase.from('inventory_items').select('*').order('name');
+    res.json(data || []);
+});
+
+// --- เพิ่มวัตถุดิบใหม่ ---
+app.post('/api/admin/inventory', verifyToken, async (req, res) => {
+    // 💡 ดึง current_stock และ min_alert_level ตามตารางของคุณ
+    const { name, current_stock, unit, min_alert_level } = req.body;
+    const { error } = await supabase.from('inventory_items').insert([{ name, current_stock, unit, min_alert_level }]);
+    res.json({ success: !error, error: error?.message });
+});
+
+// --- อัปเดตสต๊อก (เติมของ/แก้ไข) ---
+app.put('/api/admin/inventory/:id', verifyToken, async (req, res) => {
+    const { name, current_stock, unit, min_alert_level } = req.body;
+    const { error } = await supabase.from('inventory_items').update({ name, current_stock, unit, min_alert_level }).eq('id', req.params.id);
+    res.json({ success: !error, error: error?.message });
+});
+
+// --- ลบวัตถุดิบ ---
+app.delete('/api/admin/inventory/:id', verifyToken, async (req, res) => {
+    const { error } = await supabase.from('inventory_items').delete().eq('id', req.params.id);
+    res.json({ success: !error, error: error?.message });
+});
+
+// --- ดึงสูตรอาหารทั้งหมด ---
+app.get('/api/admin/recipes', verifyToken, async (req, res) => {
+    const { data, error } = await supabase.from('recipes')
+        .select('id, menu_item_id, quantity_used, inventory_items(id, name, unit), menu_items(name)');
+    res.json(data || []);
+});
+
+// --- เพิ่มสูตรอาหาร (ผูกเมนูเข้ากับวัตถุดิบ) ---
+app.post('/api/admin/recipes', verifyToken, async (req, res) => {
+    const { menu_item_id, inventory_item_id, quantity_used } = req.body;
+    const { error } = await supabase.from('recipes').insert([{ menu_item_id, inventory_item_id, quantity_used }]);
+    res.json({ success: !error, error: error?.message });
+});
+
+// --- ลบส่วนผสมออกจากสูตร ---
+app.delete('/api/admin/recipes/:id', verifyToken, async (req, res) => {
+    const { error } = await supabase.from('recipes').delete().eq('id', req.params.id);
+    res.json({ success: !error, error: error?.message });
 });
 
 const PORT = process.env.PORT || 3000;
