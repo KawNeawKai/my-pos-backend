@@ -280,5 +280,67 @@ app.put('/api/orders/serve', async (req, res) => {
     }
 });
 
+// ==========================================
+// 🔀 ระบบจัดการโต๊ะขั้นสูง (Move & Merge)
+// ==========================================
+
+// 1. ย้ายโต๊ะ (Move Table)
+app.put('/api/orders/move', async (req, res) => {
+    const { current_order_id, new_table_id } = req.body;
+    try {
+        // เช็คก่อนว่าโต๊ะใหม่มีลูกค้าอยู่แล้วหรือไม่
+        const { data: existing } = await supabase.from('orders').select('id').eq('table_id', new_table_id).eq('status', 'unpaid').maybeSingle();
+        if (existing) {
+            return res.status(400).json({ success: false, error: 'โต๊ะปลายทางไม่ว่าง (มีลูกค้าอยู่แล้ว)' });
+        }
+
+        // ถ้าโต๊ะใหม่ยังไม่มีในระบบ ให้สร้างตารางโต๊ะรอไว้เลย
+        let { data: checkTable } = await supabase.from('tables').select('id').eq('id', new_table_id).maybeSingle();
+        if (!checkTable) {
+            await supabase.from('tables').insert([{ id: new_table_id, table_number: String(new_table_id) }]);
+        }
+
+        // ย้ายบิลไปโต๊ะใหม่
+        const { error } = await supabase.from('orders').update({ table_id: new_table_id }).eq('id', current_order_id);
+        if (error) throw error;
+
+        io.emit('update_cashier');
+        io.emit('update_kitchen'); // ให้ครัวรู้ว่าย้ายโต๊ะแล้ว
+        
+        // สั่งเคลียร์หน้าจอลูกค้าโต๊ะเก่า
+        io.emit('clear_table', req.body.old_table_id);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2. รวมโต๊ะ/รวมบิล (Merge Table)
+app.put('/api/orders/merge', async (req, res) => {
+    const { source_order_id, target_table_id } = req.body;
+    try {
+        // หาบิลของโต๊ะเป้าหมายที่จะเอาของไปรวม
+        let { data: targetOrder } = await supabase.from('orders').select('id').eq('table_id', target_table_id).eq('status', 'unpaid').maybeSingle();
+        
+        if (!targetOrder) {
+            return res.status(400).json({ success: false, error: 'โต๊ะเป้าหมายไม่มีบิลเปิดอยู่ (ต้องเป็นโต๊ะที่มีลูกค้า)' });
+        }
+
+        // ย้ายรายการอาหารทั้งหมดจากโต๊ะเก่า ไปใส่โต๊ะใหม่
+        const { error: moveError } = await supabase.from('order_items').update({ order_id: targetOrder.id }).eq('order_id', source_order_id);
+        if (moveError) throw moveError;
+
+        // ลบบิลโต๊ะเก่าทิ้ง
+        await supabase.from('orders').delete().eq('id', source_order_id);
+
+        io.emit('update_cashier');
+        io.emit('update_kitchen');
+        io.emit('clear_table', req.body.old_table_id);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
