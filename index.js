@@ -473,15 +473,16 @@ app.post('/api/qr/orders', async (req, res) => {
     try {
         const { table_number, cart } = req.body;
 
-        // 1. ค้นหาตาราง tables ก่อน ว่าเบอร์โต๊ะนี้ id อะไร
+       // 1. ค้นหาตาราง tables (ปรับให้ค้นหาได้แม่นยำขึ้น)
         const { data: tableData, error: tableError } = await supabase
             .from('tables')
             .select('id')
-            .eq('table_number', table_number)
+            .or(`table_number.eq.${table_number}, table_number.eq.โต๊ะ ${table_number}`) // 👈 ลองหาทั้ง "3" และ "โต๊ะ 3"
             .single();
             
         if (tableError || !tableData) {
-            return res.status(400).json({ success: false, error: 'ไม่พบเบอร์โต๊ะนี้ในระบบ' });
+            console.error("❌ Table lookup error:", tableError); // ดู log ใน Render จะเห็นชัดเลยครับ
+            return res.status(400).json({ success: false, error: `ไม่พบเบอร์โต๊ะ ${table_number} ในฐานข้อมูล` });
         }
 
         const tableId = tableData.id;
