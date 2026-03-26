@@ -189,56 +189,31 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
 });
 
 // 💰 แคชเชียร์ (คำนวณยอดเงิน)
-// 💳 API สำหรับหน้าจอ POS แคชเชียร์ (ดึงบิลที่กำลังทาน + คำนวณยอดเงิน)
-app.get('/api/cashier/orders', async (req, res) => {
+// 💰 API เช็คบิล (Checkout) อัปเกรดบันทึกเงินรับ-เงินทอน!
+app.post('/api/cashier/checkout', async (req, res) => {
     try {
-        // 1. ดึงข้อมูลจาก 4 ตารางพร้อมกัน! (orders -> tables, order_items -> menu_items)
-        const { data: orders, error } = await supabase
+        const { order_id, received_amount, change_amount } = req.body;
+
+        const { error } = await supabase
             .from('orders')
-            .select(`
-                id,
-                status,
-                tables ( table_number ),
-                order_items (
-                    quantity,
-                    status,
-                    menu_items ( price )
-                )
-            `)
-            .eq('status', 'dining'); // ดึงเฉพาะโต๊ะที่กำลังกินอยู่
+            .update({ 
+                status: 'completed',
+                received_amount: received_amount, // บันทึกเงินที่รับมา
+                change_amount: change_amount      // บันทึกเงินทอน
+            })
+            .eq('id', order_id);
 
         if (error) throw error;
 
-        // 2. ให้หลังบ้านช่วย "บวกเลข" คำนวณยอดรวมของแต่ละโต๊ะ
-        const formattedOrders = orders.map(order => {
-            let totalAmount = 0;
-            let allServed = true;
+        io.emit('clear_table');
+        io.emit('update_cashier');
+        io.emit('update_dashboard');
 
-            // เอาอาหารทุกจานในบิลมาคูณราคา
-            if (order.order_items && order.order_items.length > 0) {
-                order.order_items.forEach(item => {
-                    const price = item.menu_items?.price || 0;
-                    totalAmount += price * item.quantity; // ราคา x จำนวน
-                    
-                    // เช็คว่าเสิร์ฟครบหรือยัง (ถ้ามีจานไหนยัง pending แสดงว่ายังไม่ครบ)
-                    if (item.status === 'pending') {
-                        allServed = false; 
-                    }
-                });
-            }
-
-            return {
-                id: order.id,
-                table_number: order.tables?.table_number, // ส่งเบอร์โต๊ะไปให้ชัดๆ
-                calculated_total: totalAmount,            // ยอดเงินรวม
-                is_all_served: allServed                  // สถานะเสิร์ฟครบไหม
-            };
-        });
-
-        res.json(formattedOrders);
+        console.log(`💸 เช็คบิลออเดอร์ ${order_id} (รับ: ${received_amount}, ทอน: ${change_amount})`);
+        res.json({ success: true, message: 'เช็คบิลสำเร็จ!' });
     } catch (error) {
-        console.error("❌ Cashier Orders Error:", error);
-        res.status(500).json({ error: error.message });
+        console.error("❌ Checkout Error:", error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
