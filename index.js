@@ -461,5 +461,75 @@ app.delete('/api/admin/recipes/:id', verifyToken, async (req, res) => {
     res.json({ success: !error, error: error?.message });
 });
 
+// 📱 API สำหรับรับออเดอร์จากมือถือลูกค้า (QR Ordering) - ฉบับบันทึกลงฐานข้อมูลจริง!
+app.post('/api/qr/orders', async (req, res) => {
+    try {
+        const { table_number, cart } = req.body;
+
+        // 1. ค้นหาตาราง tables ก่อน ว่าเบอร์โต๊ะนี้ id อะไร
+        const { data: tableData, error: tableError } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('table_number', table_number)
+            .single();
+            
+        if (tableError || !tableData) {
+            return res.status(400).json({ success: false, error: 'ไม่พบเบอร์โต๊ะนี้ในระบบ' });
+        }
+
+        const tableId = tableData.id;
+        let orderId;
+
+        // 2. เช็คว่าโต๊ะนี้มีบิลที่กำลัง "ทานอยู่" (dining) หรือไม่
+        const { data: existingOrder } = await supabase
+            .from('orders')
+            .select('id')
+            .eq('table_id', tableId)
+            .eq('status', 'dining')
+            .single();
+
+        if (existingOrder) {
+            // 📌 ถ้ามีบิลอยู่แล้ว ให้จด order_id เดิมไว้ (สั่งอาหารเพิ่ม)
+            orderId = existingOrder.id;
+        } else {
+            // 📌 ถ้ายังไม่มีบิล (ลูกค้าเพิ่งมานั่ง) ให้เปิดบิลใหม่เลย
+            const { data: newOrder, error: orderError } = await supabase
+                .from('orders')
+                .insert({ table_id: tableId, status: 'dining' })
+                .select('id')
+                .single();
+                
+            if (orderError) throw orderError;
+            orderId = newOrder.id;
+        }
+
+        // 3. เอาอาหารในตะกร้า (cart) มาแปลงร่างเตรียมบันทึกลง order_items
+        const orderItemsToInsert = cart.map(item => ({
+            order_id: orderId,
+            menu_item_id: item.id, // ⚠️ id ตรงนี้จะตรงกับฐานข้อมูลตอนเราดึงเมนูจริงมาแสดง
+            quantity: item.qty,
+            status: 'pending' // 👈 สำคัญมาก! ต้องตั้งเป็น pending คิวถึงจะเด้งไปโผล่ในห้องครัว
+        }));
+
+        // บันทึกลงฐานข้อมูล
+        const { error: insertError } = await supabase
+            .from('order_items')
+            .insert(orderItemsToInsert);
+
+        if (insertError) throw insertError;
+
+        console.log(`🔔 บันทึกออเดอร์จากโต๊ะ ${table_number} สำเร็จ!`);
+
+        // 4. 🪄 เวทมนตร์ Real-time: กระจายเสียงบอกทุกจอว่าออเดอร์เข้าแล้ว!
+        io.emit('update_kitchen'); 
+        io.emit('update_cashier'); 
+
+        res.json({ success: true, message: 'ส่งออเดอร์เข้าครัวเรียบร้อย!' });
+    } catch (error) {
+        console.error("❌ Error QR Order:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
