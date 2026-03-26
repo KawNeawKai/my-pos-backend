@@ -539,5 +539,34 @@ app.post('/api/qr/orders', async (req, res) => {
     }
 });
 
+// 💰 API เช็คบิล (Checkout) ตัดจบออเดอร์และเก็บเงิน
+app.post('/api/cashier/checkout', async (req, res) => {
+    try {
+        const { order_id } = req.body;
+
+        // 1. อัปเดตสถานะบิลในฐานข้อมูลเป็น 'completed' (จ่ายเงินแล้ว)
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                status: 'completed', 
+                // completed_at: new Date() // ถ้าเถ้าแก่มีคอลัมน์ completed_at เปิดคอมเมนต์บรรทัดนี้ได้ครับ
+            })
+            .eq('id', order_id);
+
+        if (error) throw error;
+
+        // 2. บอกทุกคนในร้านให้รีเฟรชหน้าจอ! (เพื่อให้โต๊ะกลับเป็นสีขาว)
+        io.emit('clear_table');
+        io.emit('update_cashier');
+        io.emit('update_dashboard'); // สั่งอัปเดตสถิติยอดขาย
+
+        console.log(`💸 เช็คบิลออเดอร์ ${order_id} สำเร็จ!`);
+        res.json({ success: true, message: 'เช็คบิลสำเร็จ!' });
+    } catch (error) {
+        console.error("❌ Checkout Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
