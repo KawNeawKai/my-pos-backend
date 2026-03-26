@@ -566,5 +566,16 @@ app.post('/api/cashier/checkout', async (req, res) => {
     }
 });
 
+// ⚙️ API ส่งข้อมูลตั้งค่าร้าน (เช่น จำนวนโต๊ะ) ให้หน้าบ้าน
+app.get('/api/settings', (req, res) => {
+    try {
+        // เถ้าแก่สามารถเปลี่ยนเลข 6 เป็นจำนวนโต๊ะจริงๆ ในร้านได้เลยครับ (เช่น 10, 15)
+        res.json({ total_tables: 6 }); 
+    } catch (error) {
+        console.error("❌ Settings Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
