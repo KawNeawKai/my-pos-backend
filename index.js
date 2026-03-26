@@ -52,17 +52,14 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
-// 🍕 API ดึงรายการอาหารทั้งหมดไปโชว์ที่หน้ามือถือลูกค้า
+// 🍕 API ดึงรายการอาหารทั้งหมดไปโชว์ที่หน้ามือถือลูกค้า (รวม Add-on ด้วย)
 app.get('/api/menu', async (req, res) => {
     try {
-        // ดึงเมนูที่เปิดขาย (is_available = true) และของไม่หมด (is_out_of_stock = false)
         const { data, error } = await supabase
             .from('menu_items')
             .select('*')
-            .eq('is_available', true)
-            // .eq('is_out_of_stock', false) // ถ้าเถ้าแก่ใช้คอลัมน์นี้ เปิดคอมเมนต์บรรทัดนี้ได้เลยครับ
-            .order('category', { ascending: true }) // เรียงหมวดหมู่ให้สวยงาม
-            .order('id', { ascending: true });
+            .eq('is_available', true) // ดึงเฉพาะของที่เปิดขาย
+            .order('id', { ascending: true }); // เรียงตาม ID
 
         if (error) throw error;
         
