@@ -189,32 +189,55 @@ app.put('/api/kitchen/orders/:id', async (req, res) => {
 });
 
 // 💰 แคชเชียร์ (คำนวณยอดเงิน)
+// 💳 API สำหรับหน้าจอ POS แคชเชียร์ (ดึงบิลที่กำลังทาน + คำนวณยอดเงิน)
 app.get('/api/cashier/orders', async (req, res) => {
     try {
-        const { data, error } = await supabase.from('orders')
-            .select('id, status, created_at, tables(table_number), order_items(id, quantity, status, ordered_at, notes, menu_items(name, price))')
-            .eq('status', 'unpaid')
-            .order('id', { ascending: true });
-            
+        // 1. ดึงข้อมูลจาก 4 ตารางพร้อมกัน! (orders -> tables, order_items -> menu_items)
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select(`
+                id,
+                status,
+                tables ( table_number ),
+                order_items (
+                    quantity,
+                    status,
+                    menu_items ( price )
+                )
+            `)
+            .eq('status', 'dining'); // ดึงเฉพาะโต๊ะที่กำลังกินอยู่
+
         if (error) throw error;
-        
-        const ordersWithCalculations = (data || []).map(order => {
-            let total_amount = 0;
-            let is_all_served = true;
-            
-            if (order.order_items) {
+
+        // 2. ให้หลังบ้านช่วย "บวกเลข" คำนวณยอดรวมของแต่ละโต๊ะ
+        const formattedOrders = orders.map(order => {
+            let totalAmount = 0;
+            let allServed = true;
+
+            // เอาอาหารทุกจานในบิลมาคูณราคา
+            if (order.order_items && order.order_items.length > 0) {
                 order.order_items.forEach(item => {
-                    total_amount += (item.menu_items?.price || 0) * item.quantity;
-                    if (item.status !== 'served') is_all_served = false;
+                    const price = item.menu_items?.price || 0;
+                    totalAmount += price * item.quantity; // ราคา x จำนวน
+                    
+                    // เช็คว่าเสิร์ฟครบหรือยัง (ถ้ามีจานไหนยัง pending แสดงว่ายังไม่ครบ)
+                    if (item.status === 'pending') {
+                        allServed = false; 
+                    }
                 });
             }
-            
-            return { ...order, calculated_total: total_amount, is_all_served: is_all_served };
+
+            return {
+                id: order.id,
+                table_number: order.tables?.table_number, // ส่งเบอร์โต๊ะไปให้ชัดๆ
+                calculated_total: totalAmount,            // ยอดเงินรวม
+                is_all_served: allServed                  // สถานะเสิร์ฟครบไหม
+            };
         });
 
-        res.json(ordersWithCalculations);
+        res.json(formattedOrders);
     } catch (error) {
-        console.error("Error fetching orders:", error);
+        console.error("❌ Cashier Orders Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
