@@ -516,11 +516,11 @@ app.post('/api/qr/orders', async (req, res) => {
         // 3. เอาอาหารในตะกร้า (cart) มาแปลงร่างเตรียมบันทึกลง order_items
         const orderItemsToInsert = cart.map(item => ({
             order_id: orderId,
-            menu_item_id: item.id, // ⚠️ id ตรงนี้จะตรงกับฐานข้อมูลตอนเราดึงเมนูจริงมาแสดง
+            menu_item_id: item.id, 
             quantity: item.qty,
-            status: 'pending' // 👈 สำคัญมาก! ต้องตั้งเป็น pending คิวถึงจะเด้งไปโผล่ในห้องครัว
+            notes: item.notes || '', // 👈 ไฮไลท์: เพิ่มบรรทัดนี้เพื่อให้หลังบ้านเซฟข้อความ Add-on ได้!
+            status: 'pending' 
         }));
-
         // บันทึกลงฐานข้อมูล
         const { error: insertError } = await supabase
             .from('order_items')
