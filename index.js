@@ -249,13 +249,23 @@ app.get('/api/admin/history', verifyToken, async (req, res) => {
     res.json(data || []);
 });
 
-// 📊 Dashboard สรุปยอด
+// 📊 Dashboard สรุปยอด (อัปเกรดให้รองรับการเลือกวันที่)
 app.get('/api/dashboard/stats', async (req, res) => {
     try {
-        const { data, error } = await supabase.from('orders')
+        const { date } = req.query; // 👈 รับค่าวันที่ที่หน้าเว็บส่งมาให้
+        
+        let query = supabase.from('orders')
             .select('id, created_at, order_items(quantity, menu_items(name, price))')
             .eq('status', 'paid');
             
+        // 📅 ถ้ามีการส่งวันที่มา (YYYY-MM-DD) ให้กรองเวลาของวันนั้น (เวลาประเทศไทย +07:00)
+        if (date) {
+            const startOfDay = `${date}T00:00:00+07:00`;
+            const endOfDay = `${date}T23:59:59+07:00`;
+            query = query.gte('created_at', startOfDay).lte('created_at', endOfDay);
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         const orders = data || [];
 
