@@ -52,16 +52,26 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
-// 🍔 ดึงเมนูทั้งหมด (ไม่ต้องป้องกัน เพราะลูกค้าต้องดูเมนู)
+// 🍕 API ดึงรายการอาหารทั้งหมดไปโชว์ที่หน้ามือถือลูกค้า
 app.get('/api/menu', async (req, res) => {
-    const { data } = await supabase.from('menu_items')
-        .select('*')
-        .order('category_order', { ascending: true })
-        .order('item_order', { ascending: true })
-        .order('id', { ascending: true });
-    res.json(data || []);
-});
+    try {
+        // ดึงเมนูที่เปิดขาย (is_available = true) และของไม่หมด (is_out_of_stock = false)
+        const { data, error } = await supabase
+            .from('menu_items')
+            .select('*')
+            .eq('is_available', true)
+            // .eq('is_out_of_stock', false) // ถ้าเถ้าแก่ใช้คอลัมน์นี้ เปิดคอมเมนต์บรรทัดนี้ได้เลยครับ
+            .order('category', { ascending: true }) // เรียงหมวดหมู่ให้สวยงาม
+            .order('id', { ascending: true });
 
+        if (error) throw error;
+        
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error("❌ Error fetching menu:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 // ➕ เพิ่มเมนู (🛡️ ป้องกันแล้ว)
 app.post('/api/admin/menu', verifyToken, async (req, res) => {
     const { name, price, category, image_url, target_categories } = req.body;
